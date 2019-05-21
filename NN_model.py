@@ -1,15 +1,16 @@
 import os
 import sys
+import time
 import subprocess
 import tensorflow as tf
 sys.path.append('/home/sp/PycharmProjects/brainMRI_classification')
 sys.path.append('/home/sp/PycharmProjects/brainMRI_classification/NeuralNet')
 # from NeuralNet.neuralnet_ops import *
-import NeuralNet.NN_validation as _validation
-import NeuralNet.NN_BO as _BO
-from NeuralNet.NN_net import *
-# import NeuralNet.NN_net as Net
-from NeuralNet.NN_ops import *
+import NN_validation as _validation
+import NN_BO as _BO
+from NN_net import *
+# import NN_net as Net
+from NN_ops import *
 # import NN_validation as _validation
 # import NN_BO as _BO
 # from NN_ops import *
@@ -37,9 +38,7 @@ class NeuralNet(object):
 
         self.diag_type = args.diag_type
         self.excel_option = args.excel_option
-        self.test_num = args.test_num
         self.fold_num = args.fold_num
-        self.is_split_by_num = args.is_split_by_num
         self.sampling_option = args.sampling_option
         self.learning_rate = args.lr
         self.loss_function = args.loss_function
@@ -48,7 +47,6 @@ class NeuralNet(object):
         self.weight_initializer = tf.random_normal_initializer(mean=0., stddev=self.weight_stddev)
 
         self.class_option = args.class_option
-        self.class_option_index = args.class_option_index
         class_split = self.class_option.split('vs')
         self.class_num = len(class_split)
         self.noise_augment_stddev = args.noise_augment
@@ -96,8 +94,7 @@ class NeuralNet(object):
         # None RANDOM ADASYN SMOTE SMOTEENN SMOTETomek BolderlineSMOTE
         sampling_option_str = 'None RANDOM SMOTE SMOTEENN SMOTETomek BolderlineSMOTE'  # ADASYN
         sampling_option_split = sampling_option_str.split(' ')
-        whole_set = NN_dataloader(self.diag_type, self.class_option,\
-                                  self.excel_path, self.excel_option, self.test_num, self.fold_num, self.is_split_by_num)
+        whole_set = NN_dataloader(self.diag_type, self.class_option, self.excel_path, self.excel_option, self.fold_num)
         whole_set = np.array(whole_set)
         self.train_data, self.train_label, self.test_data, self.test_label = whole_set[0]
         self.train_data = np.array(self.train_data)
@@ -132,48 +129,17 @@ class NeuralNet(object):
     def BayesOptimize(self, init_lr_log, w_stddev_log):
         _BO.BayesOptimize(init_lr_log, w_stddev_log)
 
-    # def BayesOptimize(self):
-    #     bayes_optimizer = BayesianOptimization(
-    #         f=self.BO_train_and_validate,
-    #         pbounds={
-    #             # 78 <= -1.2892029132535314,-1.2185073691640054
-    #             # 85 <= -1.2254855784556566, -1.142561108840614}}
-    #             'init_lr_log': (-2.0,-1.0),
-    #             'w_stddev_log': (-2.0,-1.0)
-    #         },
-    #         random_state=0,
-    #         # verbose=2
-    #     )
-    #     bayes_optimizer.maximize(
-    #         init_points=5,
-    #         n_iter=40,
-    #         acq='ei',
-    #         xi=0.01
-    #     )
-    #     BO_results = []
-    #     BO_results.append('\n\t\t<<< class option : {} >>>\n' .format(self.class_option))
-    #     BO_result_file_name = "BO_result/BayesOpt_results"\
-    #                           + str(time.time()) + '_' + self.class_option
-    #     fd = open(BO_result_file_name, 'a+t')
-    #     for i, ressult in enumerate(bayes_optimizer.res):
-    #         BO_results.append('Iteration {}:{}\n'.format(i, ressult))
-    #         print('Iteration {}: {}'.format(i, ressult))
-    #         fd.writelines('Iteration {}:{}\n'.format(i, ressult))
-    #     BO_results.append('Final result: {}\n'.format(bayes_optimizer.max))
-    #     fd.writelines('Final result: {}\n'.format(bayes_optimizer.max))
-    #     print('Final result: {}\n'.format(bayes_optimizer.max))
-    #     fd.close()
     ##################################################################################
     # Model
     ##################################################################################
+    def select_network(self):
+        pass
+
     def build_model(self):
         """ Graph Input """
         self.input = tf.placeholder(tf.float32, [None, self.input_feature_num], name='inputs')
-        # self.label = tf.placeholder(tf.float32, [None, self.class_num], name='targets')
         self.label = tf.placeholder(tf.int32, [None], name='targets')
         self.label_onehot = onehot(self.label, self.class_num)
-        print(self.input)
-
         # self.logits = self.model_name(self.input, reuse=False)
         self.my_model = SimpleNet(tf.truncated_normal_initializer, tf.nn.relu, self.class_num)
         # self.my_model = ResNet(tf.truncated_normal_initializer, tf.nn.relu, self.class_num)
@@ -182,26 +148,17 @@ class NeuralNet(object):
         self.pred = tf.argmax(self.logits,1)
         self.accur = accuracy(self.logits, self.label_onehot) // 1
 
-        # get loss for discriminator
-        """ Loss Function """
         with tf.name_scope('Loss'):
             # self.loss = classifier_loss('normal', predictions=self.logits, targets=self.label_onehot)
             self.loss = classifier_loss(self.loss_function, predictions=self.logits, targets=self.label_onehot)
-        """ Training """
-        # divide trainable variables into a group for D and a group for G
         t_vars = tf.trainable_variables()
         vars = [var for var in t_vars if 'neuralnet' in var.name]
-
-        # optimizers
-        start_lr = self.learning_rate
-        global_step = tf.Variable(0, trainable=False)
-        total_learning = self.epoch
-        lr = tf.train.exponential_decay(start_lr, global_step, decay_steps=self.epoch//100, decay_rate=.96, staircase=True)
-
+        with tf.name_scope('Learningrate_decay'):
+            start_lr = self.learning_rate
+            global_step = tf.Variable(0, trainable=False)
+            total_learning = self.epoch
+            lr = tf.train.exponential_decay(start_lr, global_step, decay_steps=self.epoch//100, decay_rate=.96, staircase=True)
         self.optim = tf.train.AdamOptimizer(lr).minimize(self.loss)
-        # self.d_optim = tf.train.AdamOptimizer(d_lr, beta1=self.beta1, beta2=self.beta2).minimize(self.loss, var_list=d_vars)
-        #self.d_optim = tf.train.AdagradOptimizer(d_lr).minimize(self.loss, var_list=d_vars)
-
         """ Summary """
         tf.summary.scalar("loss", self.loss)
         tf.summary.scalar('accuracy', self.accur)
@@ -211,11 +168,7 @@ class NeuralNet(object):
     # Train
     ##################################################################################
     def train(self):
-        #--------------------------------------------------------------------------------------------------
-        # initialize all variables
         tf.global_variables_initializer().run()
-        # graph inputs for visualize training results
-        # saver to save model
         self.saver = tf.train.Saver()
         self.train_writer = tf.summary.FileWriter(self.log_dir + '/' + self.model_dir +'_train', self.sess.graph)
         self.train_writer.add_graph(self.sess.graph)

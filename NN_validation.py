@@ -1,9 +1,10 @@
 import time
 import sys
+import subprocess
 sys.path.append('/home/sp/PycharmProjects/brainMRI_classification')
 sys.path.append('/home/sp/PycharmProjects/brainMRI_classification/NeuralNet')
-# from NeuralNet.neuralnet_ops import *
-from NeuralNet.NN_ops import *
+# from neuralnet_ops import *
+from NN_ops import *
 from data_merge import *
 
 def try_all_fold(self)->list:

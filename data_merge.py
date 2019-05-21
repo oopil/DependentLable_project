@@ -1,21 +1,16 @@
 from sklearn.utils import shuffle
 from pandas import get_dummies
-from chosun_ad_bot import *
-from random import shuffle
+# from random import shuffle
 import openpyxl
 import numpy as np
+import sklearn.preprocessing as labeler
 
 class MRI_chosun_data():
     def __init__(self):
         self.class_array = []
         self.nn_data = []
         self.nn_label = []
-        self.cnn_data = []
-        self.cnn_label = []
         self.diag_type = "None" # or "clinic" or "new" or "PET"
-        self.clinic_diag_index = 5
-        self.new_diag_index=6
-        self.pet_diag_index=3 # ???
 
         self.excel_option = ['P', 'T', 'V', 'merge']
         self.opt_dict_clinic = {
@@ -71,55 +66,6 @@ class MRI_chosun_data():
             self.data_excel.append(line)
         # self.data_excel = np.array(self.data_excel)
         return self.data_excel
-
-    def get_label_info_excel(self):
-        print('Column name : ')
-        print(self.data_excel[0])
-        index_list = [4,5,6] # PET NEW CLINIC
-        '''
-        ['MRI_id', 'gender', 'age', 'education', 'amyloid PET result', 'Clinic Diagnosis', 'New Diag',
-        'mtype', 'c4', ...]
-        '''
-        self.cnn_data = \
-            [[self.data_excel[i][0],self.data_excel[i][4],self.data_excel[i][5],\
-              self.data_excel[i][6],self.data_excel[i][2]]\
-             for i in range(1, len(self.data_excel)) if i%3 == 0]
-        print('label infomation length : {}' .format(len(self.cnn_data)))
-        return self.cnn_data
-
-    def extr_input_path_list(self, base_folder_path):
-        folder_name = ['aAD', 'ADD', 'mAD', 'NC']
-        print('start to extract meta data from dataset folder')
-        bot = ADBrainMRI(base_folder_path)
-        self.input_image_path_list = []
-        for class_name in folder_name:
-            self.input_image_path_list = self.input_image_path_list + bot.MRI_chosun_patch_cnn(class_name)
-        print(folder_name, len(self.input_image_path_list), self.input_image_path_list)
-        del bot
-        return self.input_image_path_list
-
-    def merge_info(self):
-        '''
-        merge the real data path and excel label information.
-        '''
-        excel_np =  np.array(self.cnn_data)
-        excel_id_col = list(excel_np[:,0])
-        my_array = []
-        for i, path in enumerate(self.input_image_path_list):
-            '''
-                self.input_image_path_list is aligned with the order [aAD, ADD, mAD NC]
-            '''
-            id ,input_path = path[1], path[2]
-            excel_index = excel_id_col.index(id)
-            self.cnn_data[excel_index].append(input_path)
-            my_array.append(self.cnn_data[excel_index])
-
-        self.cnn_data = np.array(my_array)
-        print(self.cnn_data.shape)
-        '''
-            i can use age or education factors but i don't use it now.
-        '''
-        return self.cnn_data[:,-1], self.cnn_data[:,1:4]
 
     def squeeze_excel(self, excel_option):
         '''
@@ -304,35 +250,6 @@ class MRI_chosun_data():
 
         return self.data, self.label_list
 
-    def define_label_cnn(self, label_info, class_option):
-        '''
-        :param label_info: it has 3 columns : pet, new, clinic
-        :param class_option:  'PET pos vs neg', 'NC vs MCI vs AD' 'NC vs mAD vs aAD vs ADD'
-        :return:
-
-        when we use the class option as NC vs AD, we need to remove MCI line.
-        '''
-        is_print = True
-        if is_print: pass
-        print('start labeling...' )
-        label_info = np.array(label_info)
-        self.data = self.cnn_data
-        self.label_list = []
-        # self.class_array = self.get_class_array(class_option)
-        self.set_label_func(label_info, class_option)
-        for i, label in enumerate(self.label_name):
-            self.label_list.append(self.label_func(label, self.class_array))
-        self.remove_minus_one_label()
-        self.label_list = np.array(self.label_list)
-
-        if is_print:
-            print('data and label length : ', len(self.data), ' = ',len(self.label_list))
-            print(type(self.data),type(self.label_list))
-            # print(self.nn_data[0])
-            print(self.label_list)
-
-        return self.data[:,-1], self.label_list
-
     def shuffle_data(self, data, label):
         print('shuffle the data and label - data length : ',len(data),' = ', len(label) )
         assert len(data)==len(label)
@@ -350,33 +267,6 @@ class MRI_chosun_data():
 
         assert len(label) == len(self.shuffle_label)
         return self.shuffle_data, self.shuffle_label
-
-    def split_data_by_num(self, data, label, test_num):
-        '''
-        :return:just one train and test set.
-        '''
-        label_set = list(set(label))
-        print('split the data into train and test by test number. test number : {} label set :{}'\
-              .format(test_num, label_set))
-        # print(type(label_set))
-        label_count = [0 for _ in range(len(label_set))]
-        self.test_data, self.test_label = [], []
-        self.train_data, self.train_label = [], []
-        for i, l in enumerate(label):
-            # print(i,l,label_count)
-            if label_count[l] < test_num:
-                label_count[l] += 1
-                self.test_data.append(data[i])
-                self.test_label.append(label[i])
-                continue
-
-            self.train_data.append(data[i])
-            self.train_label.append(label[i])
-
-        print('train data : {} / train label : {} / test data : {} / test label : {}'\
-            .format(len(self.train_data), len(self.train_label), len(self.test_data), len(self.test_label)))
-        return self.train_data, self.train_label, \
-               self.test_data, self.test_label
 
     def split_data_by_fold(self, data, label, fold_num):
         '''
@@ -480,39 +370,7 @@ def column(matrix, i, num):
             assert False
     return col
 
-def CNN_dataloader(base_folder_path ,diag_type, class_option, \
-                  excel_path, test_num, fold_num, is_split_by_num):
-    '''
-    1. read excel data
-    2. read input file path from dataset folder path
-    3. merge excel and path information
-    4. make label list
-    5. split train and test dataset
-    6. oversampling
-    7. balance test data
-    # handle with tensorflow dataset api
-    1. shuffle
-    2. normalization
-    3. make batch
-    :return: train and test data and lable
-    '''
-    loader = MRI_chosun_data()
-    loader.set_diagnosis_type(diag_type)
-    loader.read_excel_data(excel_path)
-    path_list = loader.extr_input_path_list(base_folder_path)
-    print(path_list[0])
-    loader.get_label_info_excel()
-    data, label_info = loader.merge_info() # here is a problem!
-    data, label = loader.define_label_cnn(label_info, class_option)
-    split_func = loader.split_data_by_fold
-    shuffle_data, shuffle_label = loader.shuffle_data(data, label)
-    '''
-        return all train and test sets devided by fold.
-    '''
-    return split_func(shuffle_data, shuffle_label, fold_num)
-
-def NN_dataloader(diag_type, class_option, \
-                  excel_path, excel_option, test_num, fold_num, is_split_by_num):
+def NN_dataloader(diag_type, class_option, excel_path, excel_option, fold_num):
     '''
     1. read excel data (O)
     2. squeeze 3 lines into 1 lines according to the options P V T merge (O)
@@ -524,7 +382,6 @@ def NN_dataloader(diag_type, class_option, \
     6. split train and test dataset (O)
     :return: train and test data and lable
     '''
-
     # "clinic" or "new" or "PET"
     # 'PET pos vs neg', 'NC vs MCI vs AD' 'NC vs mAD vs aAD vs ADD'
     # diag_type = "PET"
@@ -537,44 +394,29 @@ def NN_dataloader(diag_type, class_option, \
     # base_folder_path = '/home/sp/Datasets/MRI_chosun/test_sample_2'
     # excel_path = '/home/sp/Datasets/MRI_chosun/ADAI_MRI_test.xlsx'
     # excel_option = 'merge' # P V T merge
-
     loader = MRI_chosun_data()
     loader.set_diagnosis_type(diag_type)
     loader.read_excel_data(excel_path)
     loader.squeeze_excel(excel_option=excel_option)
     data, label_info = loader.remove_zero_column()
-
     data, label = loader.define_label_nn(label_info, class_option)
-    # normalize each column separately.
+    print(label)
+    # binarizer =
+    # print()
+    # assert False
     data = normalize_col(data)
-    # data = normalize_separate_col(data)
-    # print(data.shape)
-    # data = normalize(data)
     '''
-    when split the data by fold number, should we split the data earlier than shuffle??
+    in this setting, we use static shuffle only
     '''
-    # is_split_by_num = False
-    if is_split_by_num:
-        shuffle_data, shuffle_label = loader.shuffle_data(data, label)
-        # test_num = 20
-        '''
-            return only one train and test set
-        '''
-        return loader.split_data_by_num(shuffle_data, shuffle_label, test_num)
-    else:
-        shuffle_data, shuffle_label = loader.shuffle_data(data, label)
-        # fold_num = 5
-        # fold_index = 0
-        '''
-            return all train and test sets devided by fold. 
-        '''
-        return loader.split_data_by_fold(shuffle_data, shuffle_label, fold_num)
+    # shuffle_data, shuffle_label = loader.shuffle_data(data, label)
+    shuffle_data, shuffle_label = shuffle_static(data, label)
+    return loader.split_data_by_fold(shuffle_data, shuffle_label, fold_num)
+
 from imblearn.over_sampling import *
 from imblearn.combine import *
 def over_sampling(X_imb, Y_imb, sampling_option):
     print('starts over sampling ...', sampling_option)
     is_reshape = False
-    shape = X_imb.shape
     if np.ndim(X_imb) == 1:
         is_reshape = True
         X_imb = X_imb.reshape(-1,1)
@@ -601,7 +443,6 @@ def over_sampling(X_imb, Y_imb, sampling_option):
     if is_reshape:
         X_samp = np.squeeze(X_samp)
         print(X_samp.shape)
-        # assert False
 
     imbalance_num = len(Y_imb)
     balance_num = len(Y_samp)
@@ -609,13 +450,9 @@ def over_sampling(X_imb, Y_imb, sampling_option):
     return X_samp, Y_samp
 
 if __name__ == '__main__':
-    # a = np.array([[1,2],[3,4]])
-    # print(a[:,0])
-    # assert False
-
-    base_folder_path = '/home/sp/Datasets/MRI_chosun/ADAI_MRI_Result_V1_0_processed'# desktop setting
-    # base_folder_path = '/home/sp/Datasets/MRI_chosun/test_sample_2'
-    excel_path = '/home/sp/Datasets/MRI_chosun/ADAI_MRI_test.xlsx'
+    base_folder_path = '/home/soopil/Desktop/Dataset/MRI_chosun/ADAI_MRI_Result_V1_0_processed'# desktop setting
+    # base_folder_path = '/home/soopil/Desktop/Dataset/MRI_chosun/test_sample_2'
+    excel_path = '/home/soopil/Desktop/Dataset/MRI_chosun/ADAI_MRI_test.xlsx'
     # "clinic" or "new" or "PET"
     # 'PET pos vs neg', 'NC vs MCI vs AD' 'NC vs mAD vs aAD vs ADD'
     # diag_type = "PET"
@@ -625,15 +462,22 @@ if __name__ == '__main__':
     # diag_type = "clinic"
     # class_option = 'MCI vs AD'#'MCI vs AD'#'CN vs MCI'#'CN vs AD' #'CN vs MCI vs AD'
     excel_option = 'merge'
-    test_num = 10
     fold_num = 5
-    is_split_by_num = False
-    # NN_dataloader(diag_type, class_option, excel_path, \
-    #               excel_option, test_num, fold_num, is_split_by_num)
-    CNN_dataloader(base_folder_path ,diag_type, class_option, \
-                  excel_path, test_num, fold_num, is_split_by_num)
+    # test_num = 10
+    # is_split_by_num = False
+    whole_set = NN_dataloader(diag_type, class_option, excel_path, excel_option, fold_num)
+    print(np.shape(whole_set[0][0]))
+    print(whole_set[0][0][:5])
 
 '''
 <<numpy array column api>> 
 self.data_excel[:,0]
+
+# arr1 = [6,5,4,3,2,1]
+# arr2 = [1,2,3,4,5,6]
+# for _ in range(10):
+#     arr1_1, arr2_1 = shuffle_static(arr1,arr2)
+#     print(arr1_1)
+#     print(arr2_1)
+# assert False
 '''

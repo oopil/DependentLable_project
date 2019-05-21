@@ -1,5 +1,5 @@
 import tensorflow as tf
-import NeuralNet.NN_ops
+import NN_ops
 
 ##################################################################################
     # Custom Operation
